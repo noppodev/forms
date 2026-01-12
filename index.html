@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NoppoForms | NoppoStudio</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg-light: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-dim: #64748b;
+            --border: #e2e8f0;
+            --font-main: 'Plus Jakarta Sans', 'Noto Sans JP', sans-serif;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-light);
+            color: var(--text-main);
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .noppo-card {
+            background: var(--bg-card);
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .noppo-input {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            color: var(--text-main);
+            padding: 12px 16px;
+        }
+
+        .loading-screen {
+            position: fixed; inset: 0; background: white; z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(8px);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+
+        .responder-mode #sidebar { display: none !important; }
+        .responder-mode main { width: 100vw; }
+        .landing-mode #sidebar { display: none !important; }
+        .landing-mode #header { display: none !important; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+        .fade-in { animation: fadeIn 0.8s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="flex" id="app-body">
+
+    <div id="loader" class="loading-screen">
+        <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent"></div>
+        <p class="mt-4 text-xs font-bold text-slate-400">読み込み中...</p>
+    </div>
+
+    <!-- 共有設定モーダル -->
+    <div id="share-modal" class="modal-overlay hidden">
+        <div class="bg-white w-full max-w-md rounded-3xl p-8 border border-slate-200 shadow-2xl">
+            <h2 class="text-xl font-bold mb-6 flex items-center gap-2">
+                <i data-lucide="share-2" class="text-blue-600"></i> 公開・共有設定
+            </h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">閲覧権限</label>
+                    <select id="access-control" onchange="updateAccessControl(this.value)" class="w-full noppo-input text-xs font-bold">
+                        <option value="public">誰でも回答可能</option>
+                        <option value="noppo_only">Noppoユーザーのみ</option>
+                        <option value="specified_only">特定のNoppoユーザーのみ</option>
+                    </select>
+                </div>
+                <div id="specified-users-area" class="hidden">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">許可するユーザーのUID (カンマ区切り)</label>
+                    <input type="text" id="allowed-uids" class="w-full noppo-input text-xs" placeholder="uid1, uid2...">
+                </div>
+                <div class="pt-4 border-t border-slate-100">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">共有用URL</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="share-url-input" readonly class="flex-1 noppo-input text-xs truncate bg-slate-50">
+                        <button onclick="copyToClipboard('share-url-input')" class="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-all"><i data-lucide="copy" class="w-5 h-5"></i></button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="saveAccessAndClose()" class="w-full mt-8 bg-blue-600 text-white py-4 rounded-2xl font-bold text-sm transition-all shadow-lg">設定を保存して閉じる</button>
+        </div>
+    </div>
+
+    <!-- サイドバー -->
+    <aside id="sidebar" class="w-[280px] h-screen border-r border-slate-200 bg-white flex flex-col hidden">
+        <div class="p-8">
+            <div class="flex items-center gap-3 mb-10 cursor-pointer" onclick="loadDashboard()">
+                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
+                    <i data-lucide="file-text" class="text-white w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight">NoppoForms</h1>
+                    <p class="text-[9px] text-blue-600 font-bold uppercase tracking-widest">Premium Light</p>
+                </div>
+            </div>
+
+            <button onclick="createNewForm()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-sm shadow-xl shadow-blue-100 transition-all flex items-center justify-center gap-2 mb-8">
+                <i data-lucide="plus-circle" class="w-5 h-5"></i> 新規作成
+            </button>
+
+            <nav class="space-y-1">
+                <button onclick="loadDashboard()" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-blue-50 hover:text-blue-600 transition-all">
+                    <i data-lucide="layout-grid" class="w-5 h-5"></i> 自分のフォーム
+                </button>
+            </nav>
+        </div>
+        
+        <div class="mt-auto p-6 border-t border-slate-100" id="user-profile"></div>
+    </aside>
+
+    <!-- メインエリア -->
+    <main class="flex-1 h-screen flex flex-col relative overflow-hidden">
+        <header id="header" class="h-20 border-b border-slate-200 px-8 flex items-center justify-between z-40 bg-white hidden">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-widest" id="current-view-title">ダッシュボード</span>
+            <div class="flex items-center gap-3">
+                <div id="editor-tools" class="hidden flex items-center gap-2">
+                    <button onclick="showShareModal(activeForm.id)" class="bg-blue-50 text-blue-600 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all">共有設定</button>
+                    <button onclick="loadDashboard()" class="text-xs font-bold text-slate-400 px-4 py-2 hover:text-slate-900 transition-colors">終了</button>
+                </div>
+            </div>
+        </header>
+
+        <div id="content-area" class="flex-1 overflow-y-auto"></div>
+    </main>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+
+    <script>
+        const AUTH_WORKER_URL = "https://noppo-auth.noppo5319.workers.dev";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ2YXZhc3JkeGd1cWtpaWdjeGtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc0MTk5ODcsImV4cCI6MjA4Mjk5NTk4N30.CVq3lyRbxek7Ejs4tP5sN9-0JNEXSLtCsC2Pj-skFFQ";
+        const firebaseConfig = {
+            apiKey: "AIzaSyB2HcI-TwH88QDADp-Z5cUFRCsaVO2VMw0",
+            authDomain: "portal-1767266387985.firebaseapp.com",
+            projectId: "portal-1767266387985",
+            appId: "1:931194072772:web:f97c2e7e1ac1eb301d6391"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const APP_ID = "noppo_forms_premium_v4";
+
+        let me = null;
+        let activeForm = null;
+        let currentSectionIdx = 0;
+        let isResponder = false;
+        let sectionHistory = [];
+        let draftAnswers = {};
+
+        async function init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const formCode = urlParams.get('f');
+            const saved = localStorage.getItem('noppo_user');
+            if (saved) me = JSON.parse(saved);
+
+            const ticket = urlParams.get('ticket');
+            if (ticket) {
+                try {
+                    const res = await fetch(`${AUTH_WORKER_URL}/auth/v1/user?ticket=${ticket}`, { headers: { "apikey": SUPABASE_KEY } });
+                    if (res.ok) {
+                        const data = await res.json();
+                        me = { uid: data.id, name: data.user_metadata.display_name, avatar: data.user_metadata.avatar_url };
+                        localStorage.setItem('noppo_user', JSON.stringify(me));
+                        window.history.replaceState({}, "", window.location.pathname + (formCode ? `?f=${formCode}` : ''));
+                    }
+                } catch (e) { console.error(e); }
+            }
+
+            if (!me && !formCode) {
+                renderLandingPage();
+                return;
+            }
+
+            if (!auth.currentUser) await auth.signInAnonymously();
+            
+            document.getElementById('loader').classList.add('hidden');
+            if (formCode) {
+                loadResponder(formCode);
+            } else {
+                document.getElementById('app-body').classList.remove('landing-mode');
+                document.getElementById('sidebar').classList.remove('hidden');
+                document.getElementById('header').classList.remove('hidden');
+                renderUser();
+                loadDashboard();
+            }
+            lucide.createIcons();
+        }
+
+        function renderLandingPage() {
+            document.getElementById('loader').classList.add('hidden');
+            document.getElementById('app-body').classList.add('landing-mode');
+            const container = document.getElementById('content-area');
+            container.innerHTML = `
+                <div class="min-h-screen bg-white">
+                    <!-- ナビゲーション -->
+                    <nav class="h-20 px-8 md:px-20 flex items-center justify-between border-b border-slate-100">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
+                                <i data-lucide="file-text" class="text-white w-6 h-6"></i>
+                            </div>
+                            <h1 class="text-xl font-bold tracking-tight">NoppoForms</h1>
+                        </div>
+                        <button onclick="login()" class="text-sm font-bold text-blue-600 hover:bg-blue-50 px-6 py-2.5 rounded-full transition-all">ログイン</button>
+                    </nav>
+
+                    <!-- ヒーローセクション -->
+                    <section class="py-24 px-8 md:px-20 text-center max-w-5xl mx-auto fade-in">
+                        <h2 class="text-5xl md:text-7xl font-black tracking-tighter mb-8 leading-[1.1]">直感的にフォームを作成、<br><span class="text-blue-600">スマートに集計。</span></h2>
+                        <p class="text-lg text-slate-500 mb-12 max-w-2xl mx-auto leading-relaxed">NoppoFormsは、アンケートや申し込みフォームを数分で作成できる強力なツールです。美しいデザインと、リアルタイムな統計機能を提供します。</p>
+                        <div class="flex flex-col md:flex-row items-center justify-center gap-4">
+                            <button onclick="login()" class="w-full md:w-auto bg-blue-600 text-white px-10 py-5 rounded-2xl font-bold text-lg shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center justify-center gap-3">
+                                今すぐ無料で始める <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- 機能紹介セクション -->
+                    <section class="py-24 px-8 md:px-20 bg-slate-50">
+                        <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12">
+                            <div class="space-y-4">
+                                <div class="w-12 h-12 bg-white rounded-2xl shadow-sm border flex items-center justify-center text-blue-600">
+                                    <i data-lucide="zap"></i>
+                                </div>
+                                <h3 class="text-xl font-bold">爆速作成</h3>
+                                <p class="text-sm text-slate-500 leading-relaxed">数クリックで質問を追加。セクション分けやバリデーションも直感的に設定可能です。</p>
+                            </div>
+                            <div class="space-y-4">
+                                <div class="w-12 h-12 bg-white rounded-2xl shadow-sm border flex items-center justify-center text-blue-600">
+                                    <i data-lucide="bar-chart-3"></i>
+                                </div>
+                                <h3 class="text-xl font-bold">リアルタイム統計</h3>
+                                <p class="text-sm text-slate-500 leading-relaxed">回答が集まると自動でグラフ化。状況を一瞬で把握し、アクションにつなげられます。</p>
+                            </div>
+                            <div class="space-y-4">
+                                <div class="w-12 h-12 bg-white rounded-2xl shadow-sm border flex items-center justify-center text-blue-600">
+                                    <i data-lucide="lock"></i>
+                                </div>
+                                <h3 class="text-xl font-bold">高度な共有管理</h3>
+                                <p class="text-sm text-slate-500 leading-relaxed">公開範囲を自由に設定。URLを知っている人だけ、または特定のユーザーのみに回答を制限できます。</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- フッター -->
+                    <footer class="py-12 border-t border-slate-100 text-center">
+                        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">&copy; 2026 NoppoStudio / NoppoForms Premium</p>
+                    </footer>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function login() { window.location.href = `${AUTH_WORKER_URL}?redirect=${encodeURIComponent(window.location.href)}`; }
+        function logout() { localStorage.removeItem('noppo_user'); window.location.reload(); }
+
+        function renderUser() {
+            document.getElementById('user-profile').innerHTML = `
+                <div class="flex items-center gap-3 mb-4">
+                    <img src="${me.avatar}" class="w-10 h-10 rounded-full border">
+                    <div class="overflow-hidden flex-1">
+                        <p class="text-xs font-bold truncate">${me.name}</p>
+                        <p class="text-[8px] text-slate-400 font-bold uppercase">ユーザーID: ${me.uid.substring(0,8)}...</p>
+                    </div>
+                </div>
+                <button onclick="logout()" class="w-full py-2 text-[10px] font-bold text-rose-500 hover:bg-rose-50 rounded-lg">ログアウト</button>
+            `;
+            lucide.createIcons();
+        }
+
+        async function loadDashboard() {
+            isResponder = false;
+            document.getElementById('app-body').classList.remove('responder-mode');
+            document.getElementById('app-body').classList.remove('landing-mode');
+            document.getElementById('current-view-title').innerText = "ダッシュボード";
+            document.getElementById('editor-tools').classList.add('hidden');
+            const container = document.getElementById('content-area');
+            container.innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-8" id="forms-grid"></div>`;
+            
+            const snapshot = await db.collection("artifacts").doc(APP_ID).collection("forms").where("authorUid", "==", me.uid).get();
+            const grid = document.getElementById('forms-grid');
+            
+            if(snapshot.empty) {
+                container.innerHTML = `<div class="py-40 text-center text-slate-300 font-bold">作成したフォームはありません</div>`;
+            } else {
+                snapshot.forEach(doc => {
+                    const d = doc.data();
+                    const card = document.createElement('div');
+                    card.className = "noppo-card p-6 flex flex-col h-48 hover:border-blue-300 hover:shadow-lg transition-all cursor-pointer";
+                    card.innerHTML = `
+                        <div class="flex-1" onclick='loadEditor("${doc.id}", ${JSON.stringify(d).replace(/'/g, "&#39;")})'>
+                            <h3 class="font-bold text-lg mb-1 truncate">${d.title || '無題のフォーム'}</h3>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase">${d.access || 'public'}</p>
+                        </div>
+                        <div class="flex items-center justify-between pt-4 border-t">
+                            <button onclick="loadStats('${doc.id}')" class="text-[10px] font-bold text-blue-600">統計を表示</button>
+                            <button onclick="deleteForm('${doc.id}')" class="text-slate-300 hover:text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+            }
+            lucide.createIcons();
+        }
+
+        async function deleteForm(id) {
+            if(!confirm("このフォームを削除しますか？")) return;
+            await db.collection("artifacts").doc(APP_ID).collection("forms").doc(id).delete();
+            loadDashboard();
+        }
+
+        function createNewForm() {
+            loadEditor('new', {
+                title: "無題のフォーム",
+                description: "",
+                authorUid: me.uid,
+                access: "public",
+                allowedUids: "",
+                sections: [{ id: 's1', title: 'セクション 1', questions: [] }]
+            });
+        }
+
+        function loadEditor(id, data) {
+            isResponder = false;
+            activeForm = { id, ...data };
+            document.getElementById('current-view-title').innerText = "フォームを編集";
+            document.getElementById('editor-tools').classList.remove('hidden');
+            renderEditorUI();
+        }
+
+        function renderEditorUI() {
+            const container = document.getElementById('content-area');
+            container.innerHTML = `
+                <div class="max-w-4xl mx-auto pb-40 p-8">
+                    <div class="noppo-card p-10 mb-8 border-t-[8px] border-t-blue-600">
+                        <input type="text" id="edit-title" value="${activeForm.title}" class="w-full text-3xl font-bold bg-transparent outline-none mb-4" placeholder="フォームのタイトル">
+                        <textarea id="edit-desc" class="w-full text-sm text-slate-500 bg-transparent outline-none resize-none" placeholder="このフォームの説明を入力...">${activeForm.description}</textarea>
+                    </div>
+                    <div id="sections-container" class="space-y-10"></div>
+                    <div class="fixed bottom-10 right-10 flex gap-4">
+                        <button onclick="addSection()" class="bg-white border p-4 rounded-2xl shadow-xl font-bold text-sm">セクション追加</button>
+                        <button onclick="saveForm()" class="bg-blue-600 text-white p-4 px-8 rounded-2xl shadow-xl font-bold text-sm">保存して公開</button>
+                    </div>
+                </div>
+            `;
+            renderSections();
+            lucide.createIcons();
+        }
+
+        function renderSections() {
+            const container = document.getElementById('sections-container');
+            container.innerHTML = "";
+            activeForm.sections.forEach((s, sIdx) => {
+                const sEl = document.createElement('div');
+                sEl.className = "relative pt-8 border-t";
+                sEl.innerHTML = `
+                    <div class="flex items-center gap-4 mb-6">
+                        <span class="bg-blue-600 text-white text-[9px] font-bold px-3 py-1 rounded-full">セクション ${sIdx + 1}</span>
+                        <input type="text" value="${s.title}" oninput="activeForm.sections[${sIdx}].title = this.value" class="flex-1 bg-transparent border-b border-transparent focus:border-blue-600 outline-none font-bold text-xl py-1">
+                        <button onclick="deleteSection(${sIdx})" class="text-slate-300 hover:text-rose-500"><i data-lucide="x-circle" class="w-5 h-5"></i></button>
+                    </div>
+                    <div id="q-list-${sIdx}" class="space-y-4"></div>
+                    <button onclick="addQuestion(${sIdx})" class="mt-4 w-full py-4 border-2 border-dashed rounded-2xl text-xs font-bold text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all">+ 質問を追加</button>
+                `;
+                container.appendChild(sEl);
+                renderQuestions(sIdx);
+            });
+        }
+
+        function renderQuestions(sIdx) {
+            const qList = document.getElementById(`q-list-${sIdx}`);
+            activeForm.sections[sIdx].questions.forEach((q, qIdx) => {
+                const card = document.createElement('div');
+                card.className = "noppo-card p-6 bg-white";
+                card.innerHTML = `
+                    <div class="flex gap-4 mb-4">
+                        <input type="text" value="${q.title}" oninput="activeForm.sections[${sIdx}].questions[${qIdx}].title = this.value" class="flex-1 bg-slate-50 border rounded-xl px-4 py-3 text-sm font-bold outline-none" placeholder="質問のタイトル...">
+                        <select onchange="updateQType(${sIdx}, ${qIdx}, this.value)" class="bg-slate-50 border rounded-xl px-4 py-3 text-xs font-bold outline-none">
+                            <option value="text" ${q.type==='text'?'selected':''}>短文回答</option>
+                            <option value="textarea" ${q.type==='textarea'?'selected':''}>長文回答</option>
+                            <option value="radio" ${q.type==='radio'?'selected':''}>単一選択</option>
+                            <option value="checkbox" ${q.type==='checkbox'?'selected':''}>複数選択</option>
+                            <option value="date" ${q.type==='date'?'selected':''}>日付</option>
+                        </select>
+                    </div>
+                    <div id="opts-${sIdx}-${qIdx}" class="space-y-2 mb-4">
+                        ${renderOptionsEditor(sIdx, qIdx)}
+                    </div>
+                    <div class="flex items-center justify-between pt-4 border-t">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" ${q.required?'checked':''} onchange="activeForm.sections[${sIdx}].questions[${qIdx}].required = this.checked" class="w-4 h-4">
+                            <span class="text-[10px] font-bold text-slate-500">必須回答</span>
+                        </label>
+                        <button onclick="deleteQuestion(${sIdx}, ${qIdx})" class="text-slate-300 hover:text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                `;
+                qList.appendChild(card);
+            });
+            lucide.createIcons();
+        }
+
+        function renderOptionsEditor(sIdx, qIdx) {
+            const q = activeForm.sections[sIdx].questions[qIdx];
+            if(['text', 'textarea', 'date'].includes(q.type)) return "";
+            let html = (q.options || []).map((opt, oIdx) => `
+                <div class="flex items-center gap-2">
+                    <i data-lucide="circle" class="w-3 h-3 text-slate-300"></i>
+                    <input type="text" value="${opt}" oninput="activeForm.sections[${sIdx}].questions[${qIdx}].options[${oIdx}] = this.value" class="flex-1 bg-transparent text-sm font-bold outline-none" placeholder="選択肢 ${oIdx+1}">
+                    <button onclick="removeOption(${sIdx}, ${qIdx}, ${oIdx})" class="text-slate-300"><i data-lucide="x" class="w-3 h-3"></i></button>
+                </div>
+            `).join('');
+            html += `<button onclick="addOption(${sIdx}, ${qIdx})" class="text-[10px] font-bold text-blue-600 mt-2 hover:underline">+ 選択肢を追加</button>`;
+            return html;
+        }
+
+        function addSection() { activeForm.sections.push({ id: 's'+Date.now(), title: '新規セクション', questions: [] }); renderEditorUI(); }
+        function deleteSection(idx) { if(activeForm.sections.length > 1) { activeForm.sections.splice(idx, 1); renderEditorUI(); } }
+        function addQuestion(sIdx) { activeForm.sections[sIdx].questions.push({ id: 'q'+Date.now(), type: 'text', title: '', required: false, options: ['選択肢 1'] }); renderSections(); }
+        function deleteQuestion(sIdx, qIdx) { activeForm.sections[sIdx].questions.splice(qIdx, 1); renderSections(); }
+        function updateQType(sIdx, qIdx, type) { activeForm.sections[sIdx].questions[qIdx].type = type; if(!activeForm.sections[sIdx].questions[qIdx].options) activeForm.sections[sIdx].questions[qIdx].options = ['選択肢 1']; renderSections(); }
+        function addOption(sIdx, qIdx) { activeForm.sections[sIdx].questions[qIdx].options.push(`選択肢 ${activeForm.sections[sIdx].questions[qIdx].options.length + 1}`); renderSections(); }
+        function removeOption(sIdx, qIdx, oIdx) { activeForm.sections[sIdx].questions[qIdx].options.splice(oIdx, 1); renderSections(); }
+
+        async function saveForm() {
+            activeForm.title = document.getElementById('edit-title').value;
+            activeForm.description = document.getElementById('edit-desc').value;
+            document.getElementById('loader').classList.remove('hidden');
+            let docId = activeForm.id;
+            const { id, ...data } = activeForm;
+            if(docId === 'new') {
+                const ref = await db.collection("artifacts").doc(APP_ID).collection("forms").add(data);
+                docId = ref.id;
+                activeForm.id = docId;
+            } else {
+                await db.collection("artifacts").doc(APP_ID).collection("forms").doc(docId).set(data);
+            }
+            showShareModal(docId);
+            document.getElementById('loader').classList.add('hidden');
+        }
+
+        function showShareModal(id) {
+            activeForm.id = id;
+            document.getElementById('access-control').value = activeForm.access || 'public';
+            document.getElementById('allowed-uids').value = activeForm.allowedUids || '';
+            updateAccessControl(activeForm.access || 'public');
+            document.getElementById('share-url-input').value = `${window.location.origin}${window.location.pathname}?f=${id}`;
+            document.getElementById('share-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function updateAccessControl(val) {
+            const area = document.getElementById('specified-users-area');
+            if(val === 'specified_only') area.classList.remove('hidden');
+            else area.classList.add('hidden');
+        }
+
+        async function saveAccessAndClose() {
+            activeForm.access = document.getElementById('access-control').value;
+            activeForm.allowedUids = document.getElementById('allowed-uids').value;
+            await db.collection("artifacts").doc(APP_ID).collection("forms").doc(activeForm.id).update({ access: activeForm.access, allowedUids: activeForm.allowedUids });
+            document.getElementById('share-modal').classList.add('hidden');
+            loadDashboard();
+        }
+
+        async function loadResponder(id) {
+            document.getElementById('loader').classList.remove('hidden');
+            const doc = await db.collection("artifacts").doc(APP_ID).collection("forms").doc(id).get();
+            if(!doc.exists) { alert("フォームが見つかりません"); document.getElementById('loader').classList.add('hidden'); return; }
+            
+            const data = doc.data();
+            if (data.access === 'noppo_only' && !me) { 
+                alert("このフォームはNoppoユーザーのみ回答可能です。ログインしてください。"); 
+                renderLandingPage(); 
+                return; 
+            }
+            if (data.access === 'specified_only') {
+                if (!me) { 
+                    alert("ログインが必要です。"); 
+                    renderLandingPage(); 
+                    return; 
+                }
+                const allowed = (data.allowedUids || "").split(',').map(u => u.trim());
+                if (!allowed.includes(me.uid)) { alert("回答権限がありません。"); document.getElementById('loader').classList.add('hidden'); return; }
+            }
+
+            isResponder = true;
+            activeForm = { id, ...data };
+            currentSectionIdx = 0;
+            sectionHistory = [];
+            
+            const savedDraft = localStorage.getItem(`draft_${id}`);
+            if (savedDraft) draftAnswers = JSON.parse(savedDraft);
+            else draftAnswers = {};
+
+            document.getElementById('app-body').classList.add('responder-mode');
+            renderResponderUI();
+            document.getElementById('loader').classList.add('hidden');
+        }
+
+        function renderResponderUI() {
+            const s = activeForm.sections[currentSectionIdx];
+            const container = document.getElementById('content-area');
+            container.innerHTML = `
+                <div class="max-w-3xl mx-auto py-12 pb-40 p-8">
+                    <div class="noppo-card p-10 mb-8 border-t-[8px] border-t-blue-600 bg-white shadow-sm">
+                        <h2 class="text-2xl font-bold mb-2">${activeForm.title}</h2>
+                        <p class="text-slate-500 text-sm mb-6">${activeForm.description}</p>
+                        <div class="h-1 w-full bg-slate-100 rounded-full">
+                            <div class="h-full bg-blue-600 transition-all" style="width: ${((currentSectionIdx + 1) / activeForm.sections.length) * 100}%"></div>
+                        </div>
+                        <p class="text-[9px] font-bold text-slate-400 mt-2">ステップ ${currentSectionIdx + 1} / ${activeForm.sections.length}</p>
+                    </div>
+                    <div class="space-y-6" id="responder-questions"></div>
+                    <div class="mt-10 flex justify-between">
+                        ${sectionHistory.length > 0 ? `<button onclick="prevSection()" class="text-sm font-bold text-slate-400">戻る</button>` : '<div></div>'}
+                        ${currentSectionIdx < activeForm.sections.length - 1 
+                            ? `<button onclick="processNextStep()" class="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold">次へ</button>`
+                            : `<button onclick="submitForm()" class="bg-blue-600 text-white px-8 py-4 rounded-2xl font-bold">回答を送信</button>`
+                        }
+                    </div>
+                </div>
+            `;
+            const qList = document.getElementById('responder-questions');
+            s.questions.forEach((q) => {
+                const card = document.createElement('div');
+                card.className = "noppo-card p-8 bg-white";
+                card.innerHTML = `
+                    <p class="font-bold text-slate-900 mb-6">${q.title}${q.required ? '<span class="text-rose-500 ml-1">*</span>' : ''}</p>
+                    <div class="ans-container">${renderField(q)}</div>
+                `;
+                qList.appendChild(card);
+            });
+            lucide.createIcons();
+        }
+
+        function renderField(q) {
+            const val = draftAnswers[q.id] || "";
+            const inputClass = "w-full bg-slate-50 border rounded-xl px-5 py-4 outline-none focus:bg-white focus:border-blue-600 text-sm font-bold";
+            const onInput = `oninput="saveToDraft('${q.id}', this.value)"`;
+
+            switch(q.type) {
+                case 'text': return `<input type="text" data-qid="${q.id}" class="${inputClass}" value="${val}" ${onInput} placeholder="回答を入力...">`;
+                case 'textarea': return `<textarea data-qid="${q.id}" class="${inputClass} h-32 resize-none" ${onInput} placeholder="詳細を入力...">${val}</textarea>`;
+                case 'date': return `<input type="date" data-qid="${q.id}" class="${inputClass}" value="${val}" ${onInput}>`;
+                case 'radio': return (q.options || []).map(o => `
+                    <label class="flex items-center gap-3 p-4 mb-2 rounded-xl border hover:bg-slate-50 cursor-pointer">
+                        <input type="radio" name="${q.id}" value="${o}" ${val === o ? 'checked' : ''} onchange="saveToDraft('${q.id}', this.value)" class="w-4 h-4">
+                        <span class="text-sm font-bold text-slate-700">${o}</span>
+                    </label>
+                `).join('');
+                case 'checkbox': return (q.options || []).map(o => `
+                    <label class="flex items-center gap-3 p-4 mb-2 rounded-xl border hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" name="${q.id}" value="${o}" ${Array.isArray(val) && val.includes(o) ? 'checked' : ''} onchange="saveCheckboxToDraft('${q.id}')" class="w-4 h-4">
+                        <span class="text-sm font-bold text-slate-700">${o}</span>
+                    </label>
+                `).join('');
+                default: return `<p class="text-xs text-rose-400">エラー: 不明な回答形式です</p>`;
+            }
+        }
+
+        function saveToDraft(qid, val) {
+            draftAnswers[qid] = val;
+            localStorage.setItem(`draft_${activeForm.id}`, JSON.stringify(draftAnswers));
+        }
+
+        function saveCheckboxToDraft(qid) {
+            const checked = [];
+            document.querySelectorAll(`input[name="${qid}"]:checked`).forEach(i => checked.push(i.value));
+            saveToDraft(qid, checked);
+        }
+
+        function processNextStep() {
+            let allValid = true;
+            activeForm.sections[currentSectionIdx].questions.forEach(q => {
+                if(q.required) {
+                    const ans = draftAnswers[q.id];
+                    if(!ans || (Array.isArray(ans) && ans.length === 0)) allValid = false;
+                }
+            });
+            if(!allValid) { alert("必須項目を入力してください"); return; }
+            sectionHistory.push(currentSectionIdx);
+            currentSectionIdx++;
+            renderResponderUI();
+            window.scrollTo(0,0);
+        }
+
+        function prevSection() {
+            if(sectionHistory.length > 0) {
+                currentSectionIdx = sectionHistory.pop();
+                renderResponderUI();
+                window.scrollTo(0,0);
+            }
+        }
+
+        async function submitForm() {
+            let allValid = true;
+            activeForm.sections[currentSectionIdx].questions.forEach(q => {
+                if(q.required) {
+                    const ans = draftAnswers[q.id];
+                    if(!ans || (Array.isArray(ans) && ans.length === 0)) allValid = false;
+                }
+            });
+            if(!allValid) { alert("必須項目を入力してください"); return; }
+
+            document.getElementById('loader').classList.remove('hidden');
+            try {
+                await db.collection("artifacts").doc(APP_ID).collection("responses").add({
+                    formId: activeForm.id,
+                    answers: draftAnswers,
+                    user: me ? { uid: me.uid, name: me.name } : null,
+                    submittedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                localStorage.removeItem(`draft_${activeForm.id}`);
+                document.getElementById('content-area').innerHTML = `
+                    <div class="max-w-2xl mx-auto py-40 text-center p-8">
+                        <div class="noppo-card p-20 bg-white shadow-xl">
+                            <h2 class="text-3xl font-bold mb-4">送信完了</h2>
+                            <p class="text-slate-400 text-sm mb-10">回答ありがとうございました！</p>
+                            <button onclick="location.reload()" class="text-blue-600 font-bold hover:underline">ホームに戻る</button>
+                        </div>
+                    </div>
+                `;
+            } catch (e) { console.error(e); }
+            document.getElementById('loader').classList.add('hidden');
+        }
+
+        async function loadStats(id) {
+            const container = document.getElementById('content-area');
+            container.innerHTML = `<p class="py-20 text-center font-bold text-blue-600">統計を読み込み中...</p>`;
+            const responsesSnap = await db.collection("artifacts").doc(APP_ID).collection("responses").where("formId", "==", id).get();
+            const formDoc = await db.collection("artifacts").doc(APP_ID).collection("forms").doc(id).get();
+            const form = formDoc.data();
+            
+            container.innerHTML = `
+                <div class="max-w-4xl mx-auto p-8">
+                    <button onclick="loadDashboard()" class="mb-8 text-xs font-bold text-slate-400">← ダッシュボードへ戻る</button>
+                    <h2 class="text-3xl font-bold mb-10">${form.title} - 回答統計 (${responsesSnap.size}件)</h2>
+                    <div id="stats-list" class="space-y-6"></div>
+                </div>
+            `;
+            const statsList = document.getElementById('stats-list');
+            form.sections.forEach(s => {
+                s.questions.forEach(q => {
+                    const card = document.createElement('div');
+                    card.className = "noppo-card p-8 bg-white";
+                    card.innerHTML = `<p class="font-bold mb-6">${q.title}</p>`;
+                    
+                    if(['radio', 'checkbox'].includes(q.type)) {
+                        const counts = {};
+                        (q.options || []).forEach(o => counts[o] = 0);
+                        responsesSnap.forEach(r => {
+                            const ans = r.data().answers[q.id];
+                            if(ans) {
+                                if(Array.isArray(ans)) ans.forEach(a => counts[a] = (counts[a] || 0) + 1);
+                                else counts[ans] = (counts[ans] || 0) + 1;
+                            }
+                        });
+                        Object.keys(counts).forEach(k => {
+                            const perc = responsesSnap.size > 0 ? Math.round((counts[k]/responsesSnap.size)*100) : 0;
+                            card.innerHTML += `
+                                <div class="mb-4">
+                                    <div class="flex justify-between text-xs font-bold mb-1"><span>${k}</span><span>${counts[k]}件 (${perc}%)</span></div>
+                                    <div class="h-2 bg-slate-50 rounded-full overflow-hidden"><div class="h-full bg-blue-600" style="width: ${perc}%"></div></div>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        const subList = document.createElement('div');
+                        subList.className = "space-y-2";
+                        responsesSnap.forEach(r => {
+                            const ans = r.data().answers[q.id];
+                            if(ans) {
+                                const item = document.createElement('div');
+                                item.className = "text-xs p-3 bg-slate-50 rounded-lg";
+                                item.innerText = ans;
+                                subList.appendChild(item);
+                            }
+                        });
+                        card.appendChild(subList);
+                    }
+                    statsList.appendChild(card);
+                });
+            });
+        }
+
+        function copyToClipboard(id) {
+            const input = document.getElementById(id);
+            input.select();
+            document.execCommand('copy');
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
